@@ -111,8 +111,16 @@ class ReviewState:
         return total
 
 
-def write_output_csv(output_path: Path, rows: list[dict], state: ReviewState):
-    fields = ["group", "participant", "speaker", "time", "phase", "content", "idea_text"]
+def write_output_csv(output_path: Path, rows: list[dict], state: ReviewState, simplified: bool = False):
+    """Write kept ideas. `simplified=True` emits just time/speaker/phase/content
+    (content = idea text) for the standalone non-technical app; the default
+    (`simplified=False`) emits the full group/participant/content/idea_text
+    format used by the CLI tool."""
+    if simplified:
+        fields = ["time", "speaker", "phase", "content"]
+    else:
+        fields = ["group", "participant", "speaker", "time", "phase", "content", "idea_text"]
+
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -124,22 +132,33 @@ def write_output_csv(output_path: Path, rows: list[dict], state: ReviewState):
             first_row = rows[merged[0]]
             content = " ".join(rows[i]["content"] for i in merged)
             for idea_text in entry["idea_texts"]:
-                writer.writerow({
-                    "group": first_row.get("group", ""),
-                    "participant": first_row.get("participant", ""),
-                    "speaker": first_row["speaker"],
-                    "time": first_row["time"],
-                    "phase": first_row["phase"],
-                    "content": content,
-                    "idea_text": idea_text,
-                })
+                if simplified:
+                    writer.writerow({
+                        "time": first_row["time"],
+                        "speaker": first_row["speaker"],
+                        "phase": first_row["phase"],
+                        "content": idea_text,
+                    })
+                else:
+                    writer.writerow({
+                        "group": first_row.get("group", ""),
+                        "participant": first_row.get("participant", ""),
+                        "speaker": first_row["speaker"],
+                        "time": first_row["time"],
+                        "phase": first_row["phase"],
+                        "content": content,
+                        "idea_text": idea_text,
+                    })
 
 
-class ReviewApp(tk.Tk):
-    def __init__(self, csv_path: Path):
-        super().__init__()
-        self.title(f"Idea Review — {csv_path.name}")
-        self.geometry("760x620")
+class ReviewFrame(tk.Frame):
+    """The idea-review UI. Reusable inside either a standalone Tk root
+    (see main()/review_ideas.py CLI) or a Toplevel embedded in a larger app
+    (see app.py)."""
+
+    def __init__(self, master, csv_path: Path, simplified: bool = False):
+        super().__init__(master)
+        self.simplified = simplified
 
         self.csv_path = csv_path
         self.group = csv_path.resolve().parent.name
@@ -150,7 +169,7 @@ class ReviewApp(tk.Tk):
 
         if not self.rows:
             messagebox.showinfo("No idea rows", "No ideaGenerationOne/Two rows found in this CSV.")
-            self.destroy()
+            self.winfo_toplevel().destroy()
             return
 
         self.state_path = csv_path.with_name(csv_path.stem + "_review_state.json")
@@ -161,6 +180,7 @@ class ReviewApp(tk.Tk):
         self.pending_merge = [self.current] if self.current < len(self.rows) else []
         self._reset_fragments()
 
+        self.pack(fill="both", expand=True)
         self._build_ui()
         self._render()
 
@@ -299,7 +319,7 @@ class ReviewApp(tk.Tk):
         self.current = self.pending_merge[-1] + 1 if self.pending_merge else self.current + 1
         self.pending_merge = [self.current] if self.current < len(self.rows) else []
         self._reset_fragments()
-        write_output_csv(self.output_path, self.rows, self.state)
+        write_output_csv(self.output_path, self.rows, self.state, simplified=self.simplified)
         self._render()
 
     def _save_next(self):
@@ -344,7 +364,7 @@ class ReviewApp(tk.Tk):
         self.current = last_primary
         self.pending_merge = entry.get("merged_indices", [last_primary]) if entry else [last_primary]
         self._reset_fragments()
-        write_output_csv(self.output_path, self.rows, self.state)
+        write_output_csv(self.output_path, self.rows, self.state, simplified=self.simplified)
         self._render()
 
 
@@ -358,8 +378,11 @@ def main():
         print(f"Error: file not found: {csv_path}", file=sys.stderr)
         sys.exit(1)
 
-    app = ReviewApp(csv_path)
-    app.mainloop()
+    root = tk.Tk()
+    root.title(f"Idea Review — {csv_path.name}")
+    root.geometry("760x620")
+    ReviewFrame(root, csv_path, simplified=False)
+    root.mainloop()
 
 
 if __name__ == "__main__":

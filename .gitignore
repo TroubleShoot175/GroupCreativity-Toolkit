@@ -58,3 +58,7 @@ __pycache__/
 *_review_state.json
 *_batch_log.txt
 *_ideas.csv
+
+# PyInstaller build output (rebuild with GroupCreativityToolkit.spec; the
+# built .exe ships only as a GitHub Release asset, never committed)
+/build/

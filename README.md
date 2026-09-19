@@ -4,6 +4,21 @@ A small pipeline for researchers studying **team creativity**, **group creativit
 
 ---
 
+## For non-technical users — no installation, no command line
+
+If you don't use the command line and just want to process sessions and review ideas, use the **GroupCreativity Toolkit app** instead of anything below:
+
+1. Go to the [Releases page](https://github.com/TroubleShoot175/GroupCreativity-Toolkit/releases) and download `GroupCreativityToolkit.exe` from the latest release (Windows only).
+2. Double-click it. No Python, no installation, no typing commands.
+3. Click **Choose Sessions Folder...** and pick the folder that contains your group folders (e.g. a folder with `G15`, `G18`, ... inside it).
+4. The app finds the correct transcript in each group folder automatically and lists them.
+5. Click **Review Ideas** next to a group to trim each brainstormed line down to the idea itself (you can split one line into two ideas, merge a split idea back across lines, or discard chatter that isn't an idea).
+6. Each group produces a `..._ideas.csv` file (columns: `time, speaker, phase, content`) right next to its transcript, ready to hand off to whoever runs the Qualtrics rating survey.
+
+Everything below this point is for the command-line versions of these same tools (more flexible, but requires Python).
+
+---
+
 ## Pipeline overview
 
 ```
