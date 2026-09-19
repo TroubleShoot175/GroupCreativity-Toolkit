@@ -8,8 +8,9 @@ A small pipeline for researchers studying **team creativity**, **group creativit
 
 If you don't use the command line and just want to process sessions and review ideas, use the **GroupCreativity Toolkit app** instead of anything below:
 
-1. Go to the [Releases page](https://github.com/TroubleShoot175/GroupCreativity-Toolkit/releases) and download `GroupCreativityToolkit.exe` from the latest release (Windows only).
-2. Double-click it. No Python, no installation, no typing commands.
+1. Go to the [Releases page](https://github.com/TroubleShoot175/GroupCreativity-Toolkit/releases) and download `GroupCreativityToolkit-Windows.zip` from the latest release (Windows only).
+2. Right-click the downloaded zip → **Extract All...**, then open the extracted folder and double-click `GroupCreativityToolkit.exe` inside it. No Python, no installation, no typing commands.
+   - **Windows may show a blue "Windows protected your PC" screen** the first time — this happens for any small, unsigned app that isn't yet widely recognized by Microsoft, not because anything is wrong. Click **More info**, then **Run anyway**. (The app never accesses the internet or installs anything — it only reads/writes files in the folder you pick.)
 3. Click **Choose Sessions Folder...** and pick the folder that contains your group folders (e.g. a folder with `G15`, `G18`, ... inside it).
 4. The app finds the correct transcript in each group folder automatically and lists them.
 5. Click **Review Ideas** next to a group to trim each brainstormed line down to the idea itself (you can split one line into two ideas, merge a split idea back across lines, or discard chatter that isn't an idea).
