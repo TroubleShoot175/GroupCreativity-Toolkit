@@ -1,4 +1,4 @@
-# transcript-phase-coder — Roadmap
+# GroupCreativity Toolkit — Roadmap
 
 Feature ideas and planned improvements, roughly ordered from most immediately useful to more advanced. Community contributions welcome.
 
@@ -39,13 +39,8 @@ python process_captions.py transcript.txt --min-words 3
 
 Make the tool easier to use across a full study with many sessions.
 
-### Batch processing
-Process an entire folder of transcript files in one command and output one CSV per file (or optionally a single combined CSV with a `session_id` column).
-
-```bash
-python process_captions.py data/session_*.txt --batch
-python process_captions.py data/ --batch --combine -o all_sessions.csv
-```
+### Qualtrics integration *(not yet implemented)*
+`review_ideas.py` produces a clean idea-list CSV, but getting it into a Qualtrics rating survey is still a manual step — you build/maintain the Loop & Merge survey yourself and upload the CSV by hand. A future milestone could use the Qualtrics API to push the idea list directly into a survey and/or pull rating results back down automatically.
 
 ### Configuration file support
 Save your phase names, trigger phrases, and preferred flags in a `.yaml` or `.toml` config file so you do not have to repeat them on every run.
@@ -169,8 +164,9 @@ If you use this tool in your research and add a feature that might help others, 
 - [x] Parse SRT and WebVTT subtitle files
 - [x] Automatic format detection
 - [x] Phase detection from experimenter speech (configurable trigger phrases)
-- [x] Configurable phase names via `--phase-names`
 - [x] Phase filtering via `--phases`
 - [x] Phase summary with `--list-phases` (row counts + timestamps)
 - [x] Warning when a phase is never triggered in a file
 - [x] Python and R implementations
+- [x] Batch processing across many group folders, auto-selecting the correct transcript among several autosaved copies (`batch_process.py`)
+- [x] Manual idea-extraction review GUI — trim/split/merge/discard transcript rows down to individual ideas (`review_ideas.py`)

@@ -399,6 +399,7 @@ def main():
 
     output_path = str(args.output or input_path.with_suffix(".csv"))
     content = input_path.read_text(encoding="utf-8-sig")
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
     fmt = detect_format(content, input_path)
 
     # ---- Transcript mode -------------------------------------------------
