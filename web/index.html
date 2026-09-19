@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GroupCreativity Toolkit — Review Ideas</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>GroupCreativity Toolkit</h1>
+    <span id="whoami" class="muted"></span>
+  </header>
+
+  <main>
+    <!-- Login -->
+    <section id="view-login" hidden>
+      <form id="login-form" class="card narrow" autocomplete="off">
+        <h2>Join the review session</h2>
+        <p class="muted">Enter the passcode shown on the host computer.</p>
+        <label for="passcode">Passcode</label>
+        <input id="passcode" type="text" maxlength="12" autocapitalize="characters" spellcheck="false" required>
+        <label for="reviewer-name">Your name <span class="muted">(optional — shown to other reviewers)</span></label>
+        <input id="reviewer-name" type="text" maxlength="40">
+        <button type="submit" class="primary">Continue</button>
+        <p id="login-message" class="message error" role="alert"></p>
+      </form>
+    </section>
+
+    <!-- Group list -->
+    <section id="view-groups" hidden>
+      <div class="card">
+        <h2>Choose a group to review</h2>
+        <p class="muted">Only one person can review a group at a time. Your progress is saved after every decision.</p>
+        <ul id="group-list" class="group-list"></ul>
+        <p id="groups-message" class="message" role="status"></p>
+      </div>
+    </section>
+
+    <!-- Review -->
+    <section id="view-review" hidden>
+      <div class="review-head">
+        <button id="btn-groups" type="button">← Groups</button>
+        <strong id="progress"></strong>
+        <span id="meta" class="muted"></span>
+      </div>
+
+      <div class="panel readonly-panel">
+        <div class="panel-title">Original transcript content</div>
+        <div id="original" class="readonly"></div>
+      </div>
+
+      <div class="panel edit-panel">
+        <label class="panel-title edit-title" for="edit">✏ EDIT HERE — idea text (trim down to just the idea)</label>
+        <textarea id="edit" rows="6" spellcheck="true"></textarea>
+      </div>
+
+      <div class="panel readonly-panel">
+        <div class="panel-title">Next row (preview)</div>
+        <div id="next-meta" class="muted small"></div>
+        <div id="next-text" class="readonly"></div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-back" type="button">Back</button>
+        <button id="btn-combine" type="button">Combine with next →</button>
+        <button id="btn-split" type="button">Split at cursor ✂</button>
+        <button id="btn-discard" type="button">Discard <span class="kbd">Ctrl+D</span></button>
+        <span class="spacer"></span>
+        <button id="btn-save" type="button" class="primary">Save &amp; Next <span class="kbd">Enter</span></button>
+      </div>
+      <p id="message" class="message" role="status"></p>
+      <p class="muted small">Enter saves · Shift+Enter adds a line break · click inside the text where you want to split, then press Split at cursor.</p>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

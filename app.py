@@ -3,22 +3,23 @@
 app.py — GroupCreativity Toolkit, combined standalone app.
 
 No command line required: pick a folder containing your group session
-folders, then click "Review Ideas" for each group. This is a GUI shell
-around the same logic as batch_process.py + review_ideas.py — it does not
-reimplement transcript selection, phase detection, or idea review.
+folders, then either click "Review Ideas" for each group on this computer, or
+start the review server so reviewers on the same network can do it from their
+own browsers. This is a GUI shell around the same logic as batch_process.py +
+review_ideas.py + server.py — it does not reimplement transcript selection,
+phase detection, or idea review.
 
 Output per group: <transcript>_ideas.csv with columns
 time, speaker, phase, content (content = the reviewed idea text).
 """
 
-import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import batch_process as bp
-import process_captions as pc
 import review_ideas as ri
+import server
 
 
 class GroupResult:
@@ -60,21 +61,45 @@ class _Args:
     phases = None
 
 
+LOCAL_LABEL = "the host computer"
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("GroupCreativity Toolkit")
-        self.geometry("640x480")
+        self.geometry("720x680")
         self.results = []
+        self.registry = None
+        self.server = None
+        self._local_reviews = {}     # group name -> open review Toplevel
+        self._poll_id = None
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._show_folder_picker()
 
     # ------------------------------------------------------------------
 
     def _clear(self):
+        if self._poll_id is not None:
+            self.after_cancel(self._poll_id)
+            self._poll_id = None
+        # Only remove this window's own frames — never an open review window.
         for child in self.winfo_children():
-            child.destroy()
+            if isinstance(child, tk.Frame):
+                child.destroy()
+
+    def _on_close(self):
+        self._stop_server()
+        self.destroy()
 
     def _show_folder_picker(self):
+        if self._local_reviews:
+            messagebox.showinfo(
+                "Review windows are open",
+                "Close your open review windows before choosing a different folder.",
+            )
+            return
+        self._stop_server()
         self._clear()
         frame = tk.Frame(self)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -116,7 +141,12 @@ class App(tk.Tk):
                 r.error = str(exc)
                 self.results.append(r)
 
+        self.registry = server.GroupRegistry(
+            {r.folder.name: r.csv_path for r in self.results if r.csv_path is not None}
+        )
         self._show_group_list(parent)
+
+    # ------------------------------------------------------------------ groups
 
     def _show_group_list(self, parent: Path):
         self._clear()
@@ -127,7 +157,7 @@ class App(tk.Tk):
         tk.Label(frame, text="Groups found", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(10, 10))
 
         list_frame = tk.Frame(frame)
-        list_frame.pack(fill="both", expand=True)
+        list_frame.pack(fill="x")
 
         for result in self.results:
             row = tk.Frame(list_frame, pady=4)
@@ -143,7 +173,7 @@ class App(tk.Tk):
                 status = f"{result.folder.name} — {result.idea_row_count} idea rows — ready"
                 color = "#3c763d"
 
-            tk.Label(row, text=status, fg=color, anchor="w", justify="left", wraplength=420).pack(
+            tk.Label(row, text=status, fg=color, anchor="w", justify="left", wraplength=470).pack(
                 side="left", fill="x", expand=True
             )
             if result.csv_path is not None:
@@ -152,13 +182,141 @@ class App(tk.Tk):
                     command=lambda r=result: self._open_review(r),
                 ).pack(side="right")
 
-        tk.Button(frame, text="Choose a Different Folder...", command=self._show_folder_picker).pack(pady=(20, 0))
+        self._build_server_panel(frame)
+
+        tk.Button(frame, text="Choose a Different Folder...", command=self._show_folder_picker).pack(
+            side="bottom", pady=(20, 0)
+        )
 
     def _open_review(self, result: GroupResult):
+        name = result.folder.name
+        existing = self._local_reviews.get(name)
+        if existing is not None:
+            existing.lift()
+            existing.focus_force()
+            return
+
+        ok, holder = self.registry.acquire(name, server.LOCAL_OWNER, LOCAL_LABEL, sticky=True)
+        if not ok:
+            messagebox.showinfo(
+                "Group in use",
+                f"{name} is currently being reviewed by {holder} over the network.\n"
+                "Try again when they're finished, or pick another group.",
+            )
+            return
+
         top = tk.Toplevel(self)
-        top.title(f"Review Ideas — {result.folder.name}")
+        top.title(f"Review Ideas — {name}")
         top.geometry("760x620")
+        self._local_reviews[name] = top
+
+        def on_destroy(event, top=top, name=name):
+            if event.widget is top:      # ignore <Destroy> from child widgets
+                self._local_reviews.pop(name, None)
+                self.registry.release(name, server.LOCAL_OWNER)
+
+        top.bind("<Destroy>", on_destroy)
         ri.ReviewFrame(top, result.csv_path, simplified=True)
+
+    # ------------------------------------------------------------ review server
+
+    def _build_server_panel(self, parent):
+        panel = tk.LabelFrame(parent, text="Review from other computers on this network")
+        panel.pack(fill="x", pady=(16, 0))
+        self._server_panel = panel
+        self._render_server_panel()
+
+    def _render_server_panel(self):
+        panel = self._server_panel
+        for child in panel.winfo_children():
+            child.destroy()
+        running = self.server is not None and self.server.running
+
+        if not running:
+            tk.Label(
+                panel, justify="left", wraplength=620, anchor="w",
+                text="Let reviewers on your Wi-Fi or office network open the review screen in their own "
+                     "web browser. Each group can be reviewed by one person at a time.",
+            ).pack(fill="x", padx=10, pady=(8, 4))
+            tk.Button(panel, text="Start Review Server", command=self._start_server).pack(
+                anchor="w", padx=10, pady=(4, 10)
+            )
+            return
+
+        tk.Label(panel, anchor="w", text="Reviewers: open one of these addresses in a web browser").pack(
+            fill="x", padx=10, pady=(8, 2)
+        )
+        for url in self.server.urls():
+            row = tk.Frame(panel)
+            row.pack(fill="x", padx=10)
+            entry = tk.Entry(row, font=("Consolas", 11), width=32)
+            entry.insert(0, url)
+            entry.config(state="readonly")
+            entry.pack(side="left")
+            tk.Button(row, text="Copy", command=lambda u=url: self._copy(u)).pack(side="left", padx=6)
+
+        code_row = tk.Frame(panel)
+        code_row.pack(fill="x", padx=10, pady=(8, 0))
+        tk.Label(code_row, text="Passcode:").pack(side="left")
+        tk.Label(code_row, text=self.server.passcode, font=("Consolas", 16, "bold")).pack(side="left", padx=8)
+        tk.Button(code_row, text="Copy", command=lambda: self._copy(self.server.passcode)).pack(side="left")
+
+        self._activity_label = tk.Label(panel, anchor="w", justify="left", fg="#555", wraplength=620)
+        self._activity_label.pack(fill="x", padx=10, pady=(8, 0))
+
+        tk.Label(
+            panel, anchor="w", justify="left", fg="#555", wraplength=620,
+            text="If Windows asks whether to allow this app on the network, choose “Private networks”. "
+                 "The connection is not encrypted, so only use this on a network you trust.",
+        ).pack(fill="x", padx=10, pady=(4, 0))
+        tk.Button(panel, text="Stop Server", command=self._stop_server_clicked).pack(
+            anchor="w", padx=10, pady=(6, 10)
+        )
+        self._poll_activity()
+
+    def _poll_activity(self):
+        if self.server is None or not self.server.running:
+            return
+        holders = self.registry.holders()
+        reviewers = self.server.reviewer_labels()
+        if holders:
+            in_use = "; ".join(f"{name} — {label}" for name, label in holders)
+            text = f"In use now: {in_use}"
+        elif reviewers:
+            text = f"{len(reviewers)} reviewer(s) connected, no group open."
+        else:
+            text = "Waiting for reviewers to connect."
+        self._activity_label.config(text=text)
+        self._poll_id = self.after(2000, self._poll_activity)
+
+    def _copy(self, text: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+    def _start_server(self):
+        if self.registry is None:
+            return
+        self.server = server.ReviewServerHandle(self.registry)
+        try:
+            self.server.start()
+        except OSError as exc:
+            self.server = None
+            messagebox.showerror("Couldn't start the review server", str(exc))
+            return
+        self._render_server_panel()
+
+    def _stop_server_clicked(self):
+        self._stop_server()
+        if hasattr(self, "_server_panel") and self._server_panel.winfo_exists():
+            self._render_server_panel()
+
+    def _stop_server(self):
+        if self._poll_id is not None:
+            self.after_cancel(self._poll_id)
+            self._poll_id = None
+        if self.server is not None:
+            self.server.stop()
+            self.server = None
 
 
 def main():

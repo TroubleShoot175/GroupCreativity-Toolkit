@@ -16,6 +16,8 @@ If you don't use the command line and just want to process sessions and review i
 5. Click **Review Ideas** next to a group to trim each brainstormed line down to the idea itself (you can split one line into two ideas, merge a split idea back across lines, or discard chatter that isn't an idea).
 6. Each group produces a `..._ideas.csv` file (columns: `time, speaker, phase, content`) right next to its transcript, ready to hand off to whoever runs the Qualtrics rating survey.
 
+**Want several people to review at the same time?** Click **Start Review Server** in the app's group list. It shows an address and a passcode; anyone on the same Wi-Fi or office network can open that address in a web browser (on Windows, Mac, or Linux — nothing to install), enter the passcode, and review a group from their own computer. See [Review from other computers on your network](#4-review-from-other-computers-on-your-network--the-review-server) below.
+
 Everything below this point is for the command-line versions of these same tools (more flexible, but requires Python).
 
 ---
@@ -34,6 +36,8 @@ phase-tagged CSV  (time, speaker, phase, content)
         ▼
 review_ideas.py  — GUI: trim each idea-generation line down to the idea itself,
                     split/merge/discard as needed
+(or the review server — the same review screen in a browser, for several
+ reviewers on your network at once)
         │
         ▼
 idea-list CSV  (group, participant, speaker, time, phase, content, idea_text)
@@ -193,14 +197,53 @@ Only `ideaGenerationOne`/`ideaGenerationTwo` rows are shown. The (highlighted, p
 
 Progress autosaves after every decision to a sidecar `<csv_stem>_review_state.json`, so closing and relaunching resumes exactly where you left off.
 
-**Output:** `<csv_stem>_ideas.csv` with columns `group, participant, speaker, time, phase, content, idea_text` — `group` is auto-detected from the folder name, `participant` is parsed out of `speaker` (e.g. `G18P1` → `P1`). This is a plain one-idea-per-row CSV; map its columns however your Qualtrics import needs.
+**Output:** `<csv_stem>_ideas.csv` with columns `group, participant, speaker, time, phase, content, idea_text` (the desktop app and review server write the simplified `time, speaker, phase, content` version instead, with the idea as `content`) — `group` is auto-detected from the folder name, `participant` is parsed out of `speaker` (e.g. `G18P1` → `P1`). This is a plain one-idea-per-row CSV; map its columns however your Qualtrics import needs.
+
+---
+
+## 4. Review from other computers on your network — the review server
+
+The desktop app can also host the review screen on your local network, so several reviewers can work at once, each from their own computer's web browser. Reviewers don't install anything and never see your files; all decisions are saved on the **host** computer, next to each group's transcript, exactly as in the desktop review.
+
+**Host (the computer running the app):**
+
+1. Choose your sessions folder, then click **Start Review Server** in the group list.
+2. The window shows one or more addresses (like `http://192.168.1.20:8765`) and a six-character **passcode**. Give both to your reviewers. Each start of the server generates a new passcode.
+3. The first time, Windows may ask whether to allow the app on the network — choose **Private networks**. (If reviewers can't connect, this is the usual cause; on a corporate/university network, client isolation or a firewall policy may also block it. Try another address from the list.)
+4. The window shows which group each reviewer currently has open. **Stop Server** ends all web sessions; nothing already saved is lost.
+
+**Reviewers:** open the address in any browser, enter the passcode (and optionally your name, so others can see who has a group), pick a group, and review. The screen works like the desktop one: Enter saves, Shift+Enter adds a line break, Ctrl+D discards, plus Combine / Split at cursor / Back buttons.
+
+**How sharing works:**
+
+- **One reviewer per group at a time.** Different people can review different groups simultaneously; a group someone else has open shows as "In use by …". The host's own desktop **Review Ideas** button follows the same rule.
+- A group is released when its reviewer clicks **← Groups** or closes the page. If a reviewer's computer disappears, their group frees itself after about three minutes.
+- Progress is saved after every decision. If you reload the page, you resume at the first row you haven't decided; only an unsaved, half-finished split of the current row is lost.
+
+**Security — please read:**
+
+- The connection is plain **HTTP**, so the passcode and transcript text are **not encrypted** on the network. Use this on a network you trust (home, lab, or office), not on public or shared Wi-Fi.
+- The passcode keeps casual visitors out; it isn't a user account system, and reviewers are not individually identified beyond the optional name they type.
+- The server only serves the review screen and the groups you loaded; it can't browse other files on the host.
+
+Runs from source too: `app.py` is the host window (`python app.py`); the server itself is `server.py` (standard library only) and the browser screen is in `web/`.
+
+---
+
+## Tests
+
+```bash
+python -m unittest discover -s tests
+```
+
+Covers the review logic (`review_core.py`), the server's login/locking/API and hardening, and the host window's interaction with the server. Tests use synthetic data in temporary folders — they never touch your session folders. The window tests need a display and skip themselves without one.
 
 ---
 
 ## Typical end-to-end workflow
 
 1. `python batch_process.py .` — phase-tag every group folder, auto-picking the correct transcript in each.
-2. `python review_ideas.py G18/<the resulting CSV>` — for each group, review the idea-generation rows down to a clean idea list.
+2. `python review_ideas.py G18/<the resulting CSV>` — for each group, review the idea-generation rows down to a clean idea list. (Or run the desktop app and use its review server to spread groups across several reviewers.)
 3. Upload the resulting `_ideas.csv` files into your Qualtrics rating survey (manual step today).
 
 ---

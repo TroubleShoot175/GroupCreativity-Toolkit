@@ -26,129 +26,26 @@ Controls:
 Output:
     <csv_stem>_ideas.csv          — kept ideas only
     <csv_stem>_review_state.json  — decisions, so the session can resume
+
+The review logic itself lives in review_core.py (shared with the LAN web
+server, server.py); this module is just the Tkinter view over it.
 """
 
 import argparse
-import csv
-import json
-import re
 import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-IDEA_PHASES = {"ideaGenerationOne", "ideaGenerationTwo"}
-_PARTICIPANT_RE = re.compile(r"(P\d+)\s*$", re.IGNORECASE)
-
-
-def load_idea_rows(csv_path: Path) -> list[dict]:
-    with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f))
-    return [r for r in rows if r.get("phase") in IDEA_PHASES]
-
-
-def parse_participant(speaker: str) -> str:
-    m = _PARTICIPANT_RE.search(speaker or "")
-    return m.group(1).upper() if m else ""
-
-
-class ReviewState:
-    """Tracks per-row decisions and persists them to a sidecar JSON file."""
-
-    def __init__(self, state_path: Path):
-        self.state_path = state_path
-        self.decisions: dict[str, dict] = {}
-        if state_path.exists():
-            self.decisions = json.loads(state_path.read_text(encoding="utf-8")).get("decisions", {})
-            for entry in self.decisions.values():
-                if entry.get("action") == "kept" and "idea_texts" not in entry:
-                    entry["idea_texts"] = [entry.pop("idea_text")]
-
-    def save(self):
-        self.state_path.write_text(
-            json.dumps({"decisions": self.decisions}, indent=2), encoding="utf-8"
-        )
-
-    def is_decided(self, index: int) -> bool:
-        return str(index) in self.decisions
-
-    def primary_order(self) -> list[int]:
-        primaries = [
-            int(k) for k, v in self.decisions.items() if v["action"] in ("kept", "discarded")
-        ]
-        return sorted(primaries)
-
-    def record_kept(self, indices: list[int], idea_texts: list[str]):
-        primary = indices[0]
-        self.decisions[str(primary)] = {
-            "action": "kept",
-            "idea_texts": idea_texts,
-            "merged_indices": indices,
-        }
-        for idx in indices[1:]:
-            self.decisions[str(idx)] = {"action": "folded"}
-        self.save()
-
-    def record_discarded(self, indices: list[int]):
-        primary = indices[0]
-        self.decisions[str(primary)] = {"action": "discarded", "merged_indices": indices}
-        for idx in indices[1:]:
-            self.decisions[str(idx)] = {"action": "folded"}
-        self.save()
-
-    def undo(self, primary_index: int):
-        entry = self.decisions.pop(str(primary_index), None)
-        if entry:
-            for idx in entry.get("merged_indices", [primary_index])[1:]:
-                self.decisions.pop(str(idx), None)
-        self.save()
-        return entry
-
-    def first_undecided(self, total: int) -> int:
-        for i in range(total):
-            if not self.is_decided(i):
-                return i
-        return total
-
-
-def write_output_csv(output_path: Path, rows: list[dict], state: ReviewState, simplified: bool = False):
-    """Write kept ideas. `simplified=True` emits just time/speaker/phase/content
-    (content = idea text) for the standalone non-technical app; the default
-    (`simplified=False`) emits the full group/participant/content/idea_text
-    format used by the CLI tool."""
-    if simplified:
-        fields = ["time", "speaker", "phase", "content"]
-    else:
-        fields = ["group", "participant", "speaker", "time", "phase", "content", "idea_text"]
-
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        for key in sorted(state.decisions, key=int):
-            entry = state.decisions[key]
-            if entry["action"] != "kept":
-                continue
-            merged = entry["merged_indices"]
-            first_row = rows[merged[0]]
-            content = " ".join(rows[i]["content"] for i in merged)
-            for idea_text in entry["idea_texts"]:
-                if simplified:
-                    writer.writerow({
-                        "time": first_row["time"],
-                        "speaker": first_row["speaker"],
-                        "phase": first_row["phase"],
-                        "content": idea_text,
-                    })
-                else:
-                    writer.writerow({
-                        "group": first_row.get("group", ""),
-                        "participant": first_row.get("participant", ""),
-                        "speaker": first_row["speaker"],
-                        "time": first_row["time"],
-                        "phase": first_row["phase"],
-                        "content": content,
-                        "idea_text": idea_text,
-                    })
+# Re-exported so existing `import review_ideas as ri` callers keep working.
+from review_core import (  # noqa: F401
+    IDEA_PHASES,
+    ReviewSession,
+    ReviewState,
+    load_idea_rows,
+    parse_participant,
+    write_output_csv,
+)
 
 
 class ReviewFrame(tk.Frame):
@@ -158,27 +55,12 @@ class ReviewFrame(tk.Frame):
 
     def __init__(self, master, csv_path: Path, simplified: bool = False):
         super().__init__(master)
-        self.simplified = simplified
+        self.session = ReviewSession(csv_path, simplified=simplified)
 
-        self.csv_path = csv_path
-        self.group = csv_path.resolve().parent.name
-        self.rows = load_idea_rows(csv_path)
-        for r in self.rows:
-            r["group"] = self.group
-            r["participant"] = parse_participant(r.get("speaker", ""))
-
-        if not self.rows:
+        if not self.session.rows:
             messagebox.showinfo("No idea rows", "No ideaGenerationOne/Two rows found in this CSV.")
             self.winfo_toplevel().destroy()
             return
-
-        self.state_path = csv_path.with_name(csv_path.stem + "_review_state.json")
-        self.output_path = csv_path.with_name(csv_path.stem + "_ideas.csv")
-        self.state = ReviewState(self.state_path)
-
-        self.current = self.state.first_undecided(len(self.rows))
-        self.pending_merge = [self.current] if self.current < len(self.rows) else []
-        self._reset_fragments()
 
         self.pack(fill="both", expand=True)
         self._build_ui()
@@ -234,138 +116,67 @@ class ReviewFrame(tk.Frame):
 
     # ------------------------------------------------------------------
 
-    def _reset_fragments(self):
-        """(Re)start fragment review for the current pending_merge row group."""
-        if self.pending_merge:
-            combined = " ".join(self.rows[i]["content"] for i in self.pending_merge)
-            self.fragment_queue = [combined]
-        else:
-            self.fragment_queue = []
-        self.finalized_idea_texts = []
-
-    def _consume_fragment(self, idea_text):
-        """Finalize (or drop, if idea_text is None) the fragment currently shown."""
-        if idea_text is not None:
-            self.finalized_idea_texts.append(idea_text)
-        if self.fragment_queue:
-            self.fragment_queue.pop(0)
-
-        if self.fragment_queue:
-            self._render()
-            return
-
-        if self.finalized_idea_texts:
-            self.state.record_kept(list(self.pending_merge), list(self.finalized_idea_texts))
-        else:
-            self.state.record_discarded(list(self.pending_merge))
-        self._advance()
+    @staticmethod
+    def _set_readonly(widget: tk.Text, text: str):
+        widget.config(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.config(state="disabled")
 
     def _render(self):
-        if self.current >= len(self.rows):
-            self.progress_label.config(text=f"Done — {len(self.rows)} / {len(self.rows)}")
-            self.meta_label.config(text="")
-            self.original_text.config(state="normal")
-            self.original_text.delete("1.0", "end")
-            self.original_text.insert("1.0", "All rows reviewed.")
-            self.original_text.config(state="disabled")
-            self.edit_text.delete("1.0", "end")
-            self._render_next_preview(None)
-            return
+        snap = self.session.snapshot()
+        self.progress_label.config(text=snap["progress_text"])
+        self.meta_label.config(text=snap["meta_text"])
+        self._set_readonly(self.original_text, snap["original_text"])
 
-        row = self.rows[self.current]
-        self.progress_label.config(text=f"Row {self.current + 1} / {len(self.rows)}")
-        self.meta_label.config(text=f"{row['phase']}  |  {row['speaker']}  |  {row['time']}")
-
-        combined_content = " ".join(self.rows[i]["content"] for i in self.pending_merge)
-        self.original_text.config(state="normal")
-        self.original_text.delete("1.0", "end")
-        self.original_text.insert("1.0", combined_content)
-        self.original_text.config(state="disabled")
-
-        fragment_text = self.fragment_queue[0] if self.fragment_queue else combined_content
         self.edit_text.delete("1.0", "end")
-        self.edit_text.insert("1.0", fragment_text)
-        self.edit_text.focus_set()
+        self.edit_text.insert("1.0", snap["edit_text"])
+        if not snap["done"]:
+            self.edit_text.focus_set()
 
-        if len(self.fragment_queue) > 1:
-            self._render_next_fragment_preview(self.fragment_queue[1], row)
-        else:
-            next_idx = self.pending_merge[-1] + 1
-            self._render_next_preview(next_idx if next_idx < len(self.rows) else None)
+        self.next_meta_label.config(text=snap["next"]["meta"])
+        self._set_readonly(self.next_text, snap["next"]["text"])
 
-    def _render_next_preview(self, next_idx):
-        self.next_text.config(state="normal")
-        self.next_text.delete("1.0", "end")
-        if next_idx is None:
-            self.next_meta_label.config(text="(no more rows)")
-        else:
-            next_row = self.rows[next_idx]
-            self.next_meta_label.config(
-                text=f"{next_row['phase']}  |  {next_row['speaker']}  |  {next_row['time']}"
-            )
-            self.next_text.insert("1.0", next_row["content"])
-        self.next_text.config(state="disabled")
-
-    def _render_next_fragment_preview(self, fragment_text, row):
-        self.next_text.config(state="normal")
-        self.next_text.delete("1.0", "end")
-        self.next_meta_label.config(
-            text=f"(second half of split)  |  {row['phase']}  |  {row['speaker']}  |  {row['time']}"
-        )
-        self.next_text.insert("1.0", fragment_text)
-        self.next_text.config(state="disabled")
-
-    def _advance(self):
-        self.current = self.pending_merge[-1] + 1 if self.pending_merge else self.current + 1
-        self.pending_merge = [self.current] if self.current < len(self.rows) else []
-        self._reset_fragments()
-        write_output_csv(self.output_path, self.rows, self.state, simplified=self.simplified)
-        self._render()
+    # ------------------------------------------------------------------
 
     def _save_next(self):
+        if self.session.done:
+            return
         idea_text = self.edit_text.get("1.0", "end").strip()
         if not idea_text:
             if not messagebox.askyesno("Empty idea", "Idea text is empty — drop this fragment?"):
                 return
-            self._consume_fragment(None)
-            return
-        self._consume_fragment(idea_text)
+            self.session.drop_fragment()
+        else:
+            self.session.save_next(idea_text)
+        self._render()
 
     def _discard(self):
-        self.state.record_discarded(list(self.pending_merge))
-        self._advance()
+        if self.session.done:
+            return
+        self.session.discard()
+        self._render()
 
     def _combine_next(self):
-        next_idx = self.pending_merge[-1] + 1
-        if next_idx >= len(self.rows):
-            return
-        self.pending_merge.append(next_idx)
-        self._reset_fragments()
-        self._render()
+        if self.session.combine_next():
+            self._render()
 
     def _split_at_cursor(self):
         before = self.edit_text.get("1.0", "insert").strip()
         after = self.edit_text.get("insert", "end-1c").strip()
-        if not before or not after:
+        try:
+            self.session.split(before, after)
+        except ValueError:
             messagebox.showinfo(
                 "Can't split there",
                 "Place the cursor between the two ideas (with text on both sides) before splitting.",
             )
             return
-        self.fragment_queue[0:1] = [before, after]
         self._render()
 
     def _back(self):
-        primaries = self.state.primary_order()
-        if not primaries:
-            return
-        last_primary = primaries[-1]
-        entry = self.state.undo(last_primary)
-        self.current = last_primary
-        self.pending_merge = entry.get("merged_indices", [last_primary]) if entry else [last_primary]
-        self._reset_fragments()
-        write_output_csv(self.output_path, self.rows, self.state, simplified=self.simplified)
-        self._render()
+        if self.session.back():
+            self._render()
 
 
 def main():

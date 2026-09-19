@@ -42,6 +42,9 @@ Make the tool easier to use across a full study with many sessions.
 ### Qualtrics integration *(not yet implemented)*
 `review_ideas.py` produces a clean idea-list CSV, but getting it into a Qualtrics rating survey is still a manual step — you build/maintain the Loop & Merge survey yourself and upload the CSV by hand. A future milestone could use the Qualtrics API to push the idea list directly into a survey and/or pull rating results back down automatically.
 
+### Review server improvements *(not yet implemented)*
+The LAN review server (`server.py`) is deliberately simple. Possible next steps: HTTPS (with a self-signed certificate the app generates, or an option to supply one), per-reviewer accounts so output can be tagged by who reviewed each idea, several reviewers double-coding the same group, a phone/tablet-friendly layout, and a QR code in the host window so reviewers can open the address by scanning it.
+
 ### Configuration file support
 Save your phase names, trigger phrases, and preferred flags in a `.yaml` or `.toml` config file so you do not have to repeat them on every run.
 
@@ -170,3 +173,5 @@ If you use this tool in your research and add a feature that might help others, 
 - [x] Python and R implementations
 - [x] Batch processing across many group folders, auto-selecting the correct transcript among several autosaved copies (`batch_process.py`)
 - [x] Manual idea-extraction review GUI — trim/split/merge/discard transcript rows down to individual ideas (`review_ideas.py`)
+- [x] Standalone Windows app (`app.py`, packaged with PyInstaller) — no command line needed
+- [x] LAN review server — reviewers on the same network do the idea review in a web browser, one reviewer per group, passcode-protected (`server.py`, `web/`)
